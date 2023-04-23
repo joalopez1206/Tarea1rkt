@@ -31,3 +31,10 @@
              })
       (numV 3))
 
+(test (parse-expr '{with {{x 1}{y 2}{z 3}}
+              {+ x z}})
+  (with 
+    (list (cons 'x (num 1)) 
+          (cons 'y (num 2))
+          (cons 'z (num 3)))
+    (add (id 'x) (id 'z))))

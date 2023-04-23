@@ -2,6 +2,14 @@
 
 (require "env.rkt")
 
+
+(define (lookup-fundef f fundefs)
+  (match fundefs
+    ['() (error "undefined function:" f)]
+    [(cons fd rest)
+     (if (equal? (fundef-name fd) f)
+         fd
+         (lookup-fundef f rest))]))
 ;; Parte 1
 
 #|
@@ -77,21 +85,20 @@
     [(list 'fst e) (fst (parse-expr e))]
     [(list 'snd e) (snd (parse-expr e))]
     [(list 'if  c t f) (if0 (parse-expr c) (parse-expr t) (parse-expr f))]
-    [(list 'with lst body) (with (map parse-tuples lst) (parse-expr body))]
+    [(list 'with lst body) (with (map parse-tuple lst) (parse-expr body))]
     [(? list?) (app (car se) (map parse-expr (cdr se)))]
     ))
 
-
-(define (parse-tuples lst)
-  (match lst
-    [(list i e) (list (parse-expr i) (parse-expr e))]
-    ['() '()]))
+;; parse-tuples :: list[list[id, val]] -> list[tuple[id, val]] 
+(define (parse-tuple tuple)
+  (match tuple
+    [(list i e) (cons i (parse-expr e))]))
 
 ;; parse-fundef :: s-function -> function
 (define (parse-fundef sf)
   (match sf
     [(list 'define lst body) (fundef (car lst) (map parse-expr (cdr lst)) (parse-expr body))]
-    [_ (error "xd")]))
+    ))
 
 ;; interp :: expr list[var] list [fun] -> Val
 (define (interp e env funs)
@@ -99,25 +106,39 @@
     [(num n) (numV n)]
     [(id x) (env-lookup x env)]
     [(bool b) (boolV b)]
+    [(pair l r) (pairV (interp l env funs) (interp r env funs))]
     [(add l r) (numV+ (interp l env funs) (interp r env funs))]
     [(lt l r) (boolV< (interp l env funs) (interp r env funs))]
     [(eq l r) (numV= (interp l env funs) (interp r env funs))]
     [(and0 l r) (numV+ (interp l env funs) (interp r env funs))]
-    [(not0 b) (boolVnot (interp b env funs))]
+    [(not0 b) (boolV! (interp b env funs))]
     [(fst p) (interp (pairV-lV p) env funs)]
     [(snd p) (interp (pairV-rV p) env funs)]
-    [(if0 c t f) (if (interp c env funs) (interp t env funs) (interp f env funs))]
-    [(with vars body) ()]
-    [_ (error "not yet implemented")]
+    [(if0 c t f) (if (interp c env funs)
+                     (interp t env funs)
+                     (interp f env funs))]
+    [(with vars body)
+     (interp body (extend-env-vars env vars funs) funs)]
+    [(app f value)
+     (def (fundef _ args body) (lookup-fundef f funs))
+     (interp body (extend-env-vars env (map cons (map id-x args) (interp value env funs)) funs) funs)]
     ))
 
+;; extend-env-vars :: env x list[tuple[id, expr]] list[funs] -> env
+(define (extend-env-vars env vars funs)
+  (match vars
+    ['() env]
+    [(cons (cons i val) tail)
+                        (extend-env-vars (extend-env i (interp val env funs) env) tail funs)]
+    ))
+;;
 (define (numV+ l r)
   (numV (+ (numV-n l) (numV-n r))))
-
+;;
 (define (numV= l r)
-  (boolV (equal? ((numV-n l) (numV-n r)))))
+  (boolV (equal? (numV-n l) (numV-n r))))
 
-(define (boolVnot e)
+(define (boolV! e)
   (boolV (not (boolV-b e))))
 
 (define (boolV< l r)
@@ -134,18 +155,3 @@
 (define (run sp)
   (def (prog funs main) (parse sp))
   (interp main empty-env funs))
-
-(test (run '{5}) (numV 5))
-(test (run '{#t}) (boolV #t))
-;(test (run '{+ 1 1}) (numV 2))
-;(test
-(parse '{ ;; Programa de Ejemplo 2
-             {with {{x 5} {y 23} {z {cons 11 -3}}}
-                   z}
-             })
-(parse '{ ;; Programa de Ejemplo 1
-             {define {sum x y z} {+ x {+ y z}}}
-             {define {cadr x} {fst {snd x}}}
-             {with {{x 9} {y {cons 1 {cons 3 4}}}}
-                   {sum x {fst y} {cadr y}} }
-             })
