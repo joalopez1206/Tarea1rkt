@@ -110,27 +110,30 @@
     [(add l r) (numV+ (interp l env funs) (interp r env funs))]
     [(lt l r) (boolV< (interp l env funs) (interp r env funs))]
     [(eq l r) (numV= (interp l env funs) (interp r env funs))]
-    [(and0 l r) (numV+ (interp l env funs) (interp r env funs))]
+    [(and0 l r) (boolVand (interp l env funs) (interp r env funs))]
+    [(or0 l r) (boolVor (interp l env funs) (interp r env funs))]
     [(not0 b) (boolV! (interp b env funs))]
-    [(fst p) (interp (pairV-lV p) env funs)]
-    [(snd p) (interp (pairV-rV p) env funs)]
+    [(fst p) (pairV-lV (interp p env funs))]
+    [(snd p) (pairV-rV (interp p env funs))]
     [(if0 c t f) (if (interp c env funs)
                      (interp t env funs)
                      (interp f env funs))]
     [(with vars body)
-     (interp body (extend-env-vars env vars funs) funs)]
+     (interp body (extend-env-vars env vars funs env) funs)]
     [(app f value)
      (def (fundef _ args body) (lookup-fundef f funs))
-     (interp body (extend-env-vars env (map cons (map id-x args) (interp value env funs)) funs) funs)]
+     (def vars (map cons (map id-x args) value))
+     (interp body (extend-env-vars empty-env vars funs env) funs)]
     ))
 
-;; extend-env-vars :: env x list[tuple[id, expr]] list[funs] -> env
-(define (extend-env-vars env vars funs)
+;; extend-env-vars :: env x list[tuple[id, expr]] list[funs] x env -> env
+(define (extend-env-vars env vars funs outside-env)
   (match vars
     ['() env]
     [(cons (cons i val) tail)
-                        (extend-env-vars (extend-env i (interp val env funs) env) tail funs)]
-    ))
+     (def value (interp val outside-env funs))
+     (def new-env (extend-env i value env))
+     (extend-env-vars new-env tail funs  outside-env)]))
 ;;
 (define (numV+ l r)
   (numV (+ (numV-n l) (numV-n r))))
@@ -155,3 +158,15 @@
 (define (run sp)
   (def (prog funs main) (parse sp))
   (interp main empty-env funs))
+#|(run '{ ;; Programa de Ejemplo 1
+             {define {sum x y z} {+ x {+ y z}}}
+             {define {cadr x} {fst {snd x}}}
+             {with {{x 9} {y {cons 1 {cons 3 4}}}}
+                   {sum x {fst y} {cadr y}} }
+             })|#
+
+#|(run '{{define {triple x} {+ x {+ x x}}}
+             {define {add2 x} {+ 2 x}}
+             {with {{x {triple 2}} {y {add2 x}}}
+                   {if {< x 10} y #f}}
+             })|#
