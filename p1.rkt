@@ -57,11 +57,19 @@
   (if0 c t f)
   (with lst body)
   (app name arg-expr))
+
 ;; tipo inductivo para los valores del lenguaje
 (deftype Val
   (numV n)
   (boolV b)
   (pairV lV rV))
+
+;; mytype :: Val -> String
+(define (mytype v)
+  (match v
+    [(numV _)    "Number"]
+    [(boolV _)   "Bool"]
+    [(pairV _ _) "Pair"]))
 
 ;; parse :: s-program -> program
 (define (parse sp)
@@ -78,13 +86,14 @@
     [(list 'cons e1 e2) (pair (parse-expr e1) (parse-expr e2))]
     [(list '+ e1 e2) (add (parse-expr e1) (parse-expr e2))]
     [(list '< e1 e2) (lt (parse-expr e1) (parse-expr e2))]
+    [(list 'add1 e) (add (num 1) (parse-expr e))]
     [(list '= e1 e2) (eq (parse-expr e1) (parse-expr e2))]
     [(list '! e) (not0 (parse-expr e))]
     [(list '&& e1 e2) (and0 (parse-expr e1) (parse-expr e2))]
     [(list '|| e1 e2) (or0 (parse-expr e1) (parse-expr e2))]
     [(list 'fst e) (fst (parse-expr e))]
     [(list 'snd e) (snd (parse-expr e))]
-    [(list 'if  c t f) (if0 (parse-expr c) (parse-expr t) (parse-expr f))]
+    [(list 'if c t f) (if0 (parse-expr c) (parse-expr t) (parse-expr f))]
     [(list 'with lst body) (with (map parse-tuple lst) (parse-expr body))]
     [(? list?) (app (car se) (map parse-expr (cdr se)))]
     ))
@@ -100,7 +109,7 @@
     [(list 'define lst body) (fundef (car lst) (map parse-expr (cdr lst)) (parse-expr body))]
     ))
 
-;; interp :: expr list[var] list [fun] -> Val
+;; interp :: expr list[var] list [fun] -> Val/error
 (define (interp e env funs)
   (match e
     [(num n) (numV n)]
@@ -113,9 +122,13 @@
     [(and0 l r) (boolVand (interp l env funs) (interp r env funs))]
     [(or0 l r) (boolVor (interp l env funs) (interp r env funs))]
     [(not0 b) (boolV! (interp b env funs))]
-    [(fst p) (pairV-lV (interp p env funs))]
-    [(snd p) (pairV-rV (interp p env funs))]
-    [(if0 c t f) (if (interp c env funs)
+    [(fst p)
+     ;(checkpairV p)
+     (pairV-lV (interp p env funs))]
+    [(snd p)
+     ;(checkpairV p)
+     (pairV-rV (interp p env funs))]
+    [(if0 c t f) (if (boolV-b (interp c env funs))
                      (interp t env funs)
                      (interp f env funs))]
     [(with vars body)
@@ -134,39 +147,69 @@
      (def value (interp val outside-env funs))
      (def new-env (extend-env i value env))
      (extend-env-vars new-env tail funs  outside-env)]))
-;;
+
+;; numV+ :: numV x numV -> numV/err
 (define (numV+ l r)
+  (checknumV l)
+  (checknumV r)
   (numV (+ (numV-n l) (numV-n r))))
-;;
+
+;; numV= :: numV x numV -> boolV/err
 (define (numV= l r)
+  (checknumV l)
+  (checknumV r)
   (boolV (equal? (numV-n l) (numV-n r))))
 
+;; boolV! :: boolV -> boolV/err
 (define (boolV! e)
+  (checkboolV e)
   (boolV (not (boolV-b e))))
 
+;; boolV! :: numV x numV -> boolV/err
 (define (boolV< l r)
+  (checknumV l)
+  (checknumV r)
   (boolV (< (numV-n l) (numV-n r))))
 
+;; numV+ numV x numV -> boolV/err
 (define (boolVand l r)
+  (checkboolV l)
+  (checkboolV r)
   (boolV (and (boolV-b l) (boolV-b r))))
 
+;; numV+ numV x numV -> boolV/err
 (define (boolVor l r)
+  (checkboolV l)
+  (checkboolV r)
   (boolV (or (boolV-b l) (boolV-b r))))
 
+;; checknumV :: num -> null/err
+(define (checknumV n)
+  (match n
+    [(numV _) null]
+    [else (error "Runtime type error: expected Number found" (mytype n))]))
+
+;; checkboolV :: num -> null/err
+(define (checkboolV n)
+  (match n
+    [(boolV _) null]
+    [else (error "Runtime type error: expected Bool found" (mytype n))]))
+
+;; checkpairV :: num -> null/err
+(define (checkpairV n)
+  (match n
+    [(pairV _ _) null]
+    [else (error "Runtime type error: expected Pair found" (mytype n))]))
 
 ;; run :: s-program -> val
 (define (run sp)
   (def (prog funs main) (parse sp))
   (interp main empty-env funs))
-#|(run '{ ;; Programa de Ejemplo 1
+
+
+(run '{ ;; Programa de Ejemplo 1
              {define {sum x y z} {+ x {+ y z}}}
              {define {cadr x} {fst {snd x}}}
              {with {{x 9} {y {cons 1 {cons 3 4}}}}
                    {sum x {fst y} {cadr y}} }
-             })|#
-
-#|(run '{{define {triple x} {+ x {+ x x}}}
-             {define {add2 x} {+ 2 x}}
-             {with {{x {triple 2}} {y {add2 x}}}
-                   {if {< x 10} y #f}}
-             })|#
+             })
